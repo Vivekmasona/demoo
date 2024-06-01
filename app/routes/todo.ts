@@ -1,117 +1,56 @@
-import {
-	type NextFunction,
-	type Request,
-	type Response,
-	Router,
-} from "express";
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
 
-import { Todo } from "../../models/todo";
+const app = express();
+app.use(bodyParser.json());
+app.use(cors());
 
-// Define interfaces for request bodies and parameters
-interface TodoBody {
-	text: string;
-}
+let sessions = {};
 
-interface TodoParams {
-	id: string;
-}
+app.post('/control', (req, res) => {
+    const { action, value, sessionId } = req.body;
 
-const router = Router();
+    if (!sessions[sessionId]) {
+        sessions[sessionId] = { url: '', status: 'stop', volume: 100, action: null, value: null };
+    }
 
-let todos: Todo[] = [];
+    sessions[sessionId].action = action;
+    sessions[sessionId].value = value;
 
-router.post(
-	"/",
-	(
-		req: Request<
-			unknown,
-			{
-				message: string;
-				createdTodo: Todo;
-			},
-			TodoBody
-		>,
-		res: Response,
-		_next: NextFunction,
-	) => {
-		const { text } = req.body;
-		const newTodo = new Todo(Math.random().toString(), text);
-		todos.push(newTodo);
-
-		res
-			.status(201)
-			.jsend.success({ message: "Created the todo.", createdTodo: newTodo });
-	},
-);
-
-router.get("/", (_req, res, _next) => {
-	res.jsend.success({ todos: todos });
+    res.json({ status: 'Command received', action, value, sessionId });
 });
 
-router.patch("/:id", (req: Request<TodoParams>, res: Response, _next) => {
-	const todoId = req.params.id;
-	const updatedText = (req.body as { text: string }).text;
+app.post('/update-url', (req, res) => {
+    const { url, sessionId } = req.body;
 
-	const todoIndex = todos.findIndex((todo) => todo.id === todoId);
+    if (!sessions[sessionId]) {
+        sessions[sessionId] = { url: '', status: 'stop', volume: 100, action: null, value: null };
+    }
 
-	if (todoIndex < 0) {
-		res.jsend.error({ message: "Could not find todo!", code: 500 });
-		return;
-	}
-
-	todos[todoIndex] = new Todo(
-		todos[todoIndex].id,
-		updatedText,
-		todos[todoIndex].completed,
-	);
-	res.jsend.success({ message: "Updated!", updatedTodo: todos[todoIndex] });
+    sessions[sessionId].url = url;
+    res.json({ status: 'URL updated', sessionId });
 });
 
-router.put("/:id", (req: Request<TodoParams>, res: Response, _next) => {
-	const todoId = req.params.id;
-	const updatedText = (req.body as { text: string }).text;
-	const todoIndex = todos.findIndex((todo) => todo.id === todoId);
+app.get('/current-url/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
 
-	if (todoIndex < 0) {
-		res.jsend.error({ message: "Could not find todo!", code: 500 });
-		return;
-	}
+    if (!sessions[sessionId]) {
+        return res.status(400).json({ error: 'Invalid session ID' });
+    }
 
-	todos[todoIndex] = new Todo(
-		todos[todoIndex].id,
-		updatedText,
-		todos[todoIndex].completed,
-	);
-	res.jsend.success({ message: "Updated!", updatedTodo: todos[todoIndex] });
+    res.json({
+        success: true,
+        sessionId,
+        url: sessions[sessionId].url,
+        status: sessions[sessionId].status,
+        volume: sessions[sessionId].volume,
+        action: sessions[sessionId].action,
+        value: sessions[sessionId].value
+    });
 });
 
-router.delete("/:id", (req: Request<TodoParams>, res: Response, _next) => {
-	const todoId = req.params.id;
-	todos = todos.filter((todo) => todo.id !== todoId);
-	res.jsend.success({ message: "Todo deleted!" });
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
-
-router.post(
-	"/:id/complete",
-	(req: Request<TodoParams>, res: Response, _next) => {
-		const todoId = req.params.id;
-		const todoIndex = todos.findIndex((todo) => todo.id === todoId);
-
-		if (todoIndex < 0) {
-			res.jsend.error({ message: "Could not find todo!", code: 500 });
-			return;
-		}
-
-		todos[todoIndex] = new Todo(
-			todos[todoIndex].id,
-			todos[todoIndex].text,
-			true,
-		);
-		res.jsend.success({
-			message: "Completed the todo!",
-			completedTodo: todos[todoIndex],
-		});
-	},
-);
-
-export default router;
