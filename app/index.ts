@@ -1,56 +1,56 @@
-import { join } from "node:path";
-import bodyParser from "body-parser";
-import cors from "cors";
-import express from "express";
-import helmet from "helmet";
-import jsend from "jsend";
-
-import logger from "../logger";
-import errorHandler from "../middlewares/error-handler";
-import todoRoutes from "./routes/todo";
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
 
 const app = express();
-const isVercel = process.env.DEPLOYMENT_ENV === "vercel";
-
-// middleware routes
-const isProduction = process.env.NODE_ENV === "production";
-if (isProduction) {
-	app.use(helmet());
-}
-app.use(cors());
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(jsend.middleware); // more detail on https://github.com/omniti-labs/jsend
-app.use(errorHandler);
-const options = {
-	dotfiles: "ignore",
-	etag: false,
-	extensions: ["htm", "html"],
-	index: false,
-	maxAge: "1d",
-	redirect: false,
-	setHeaders(res: express.Response) {
-		res.set("x-static-timestamp", Date.now().toString());
-	},
-};
+app.use(cors());
 
-app.use("/static", express.static(join(__dirname, "../public"), options));
+let sessions = {};
 
-app.get("/", (_req, res: express.Response) => {
-	res.send("Open Swagger UI at http://localhost:3000/static/index.html");
+app.post('/control', (req, res) => {
+    const { action, value, sessionId } = req.body;
+
+    if (!sessions[sessionId]) {
+        sessions[sessionId] = { url: '', status: 'stop', volume: 100, action: null, value: null };
+    }
+
+    sessions[sessionId].action = action;
+    sessions[sessionId].value = value;
+
+    res.json({ status: 'Command received', action, value, sessionId });
 });
 
-app.get("/api", (_req, res: express.Response) => {
-	res.setHeader("Content-Type", "application/json");
-	res.json({ name: "Hello world" });
+app.post('/update-url', (req, res) => {
+    const { url, sessionId } = req.body;
+
+    if (!sessions[sessionId]) {
+        sessions[sessionId] = { url: '', status: 'stop', volume: 100, action: null, value: null };
+    }
+
+    sessions[sessionId].url = url;
+    res.json({ status: 'URL updated', sessionId });
 });
 
-app.use("/api/todo", todoRoutes);
+app.get('/current-url/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
 
-if (!isVercel) {
-	app.listen(3000).on("listening", () => {
-		logger.info("server is listening on port http://localhost:3000");
-	});
-}
+    if (!sessions[sessionId]) {
+        return res.status(400).json({ error: 'Invalid session ID' });
+    }
 
-module.exports = app;
+    res.json({
+        success: true,
+        sessionId,
+        url: sessions[sessionId].url,
+        status: sessions[sessionId].status,
+        volume: sessions[sessionId].volume,
+        action: sessions[sessionId].action,
+        value: sessions[sessionId].value
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
